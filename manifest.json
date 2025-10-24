@@ -1,19 +1,16 @@
 {
   "manifest_version": 3,
   "name": "TACTリソース再帰ダウンローダー",
-  "version": "2.0",
-  "description": "TACT（Sakai）の授業資料を再帰的にフォルダ構造を保ってダウンロードします。",
+  "version": "2.4",
+  "description": "TACTの授業資料をフォルダ構造を保って一括ダウンロードします。",
   "permissions": ["downloads", "scripting", "tabs", "activeTab"],
   "host_permissions": ["https://tact.ac.thers.ac.jp/*"],
   "background": {
     "service_worker": "downloader.js"
   },
-  "content_scripts": [
-    {
-      "matches": ["https://tact.ac.thers.ac.jp/*"],
-      "js": ["content.js"]
-    }
-  ],
+  "action": {
+    "default_title": "TACTダウンローダー"
+  },
   "icons": {
     "48": "icon.png"
   }

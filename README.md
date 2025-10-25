@@ -33,7 +33,7 @@
 
 1. このリポジトリをクローンまたはZIPでダウンロード  
    ```bash
-   git clone https://github.com/yourname/tact-resource-downloader.git
+   git clone https://github.com/HIKARU0627/TACT-Downloader.git
    ```
 
 2. Chromeで `chrome://extensions/` を開く  

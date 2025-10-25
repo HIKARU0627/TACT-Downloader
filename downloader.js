@@ -5,25 +5,27 @@ chrome.runtime.onInstalled.addListener(() => {
     title: "TACTの資料をダウンロード",
     contexts: ["page"]
   });
+  chrome.contextMenus.create({
+    id: "tact-bulk",
+    title: "複数授業を一括ダウンロード",
+    contexts: ["action"]
+  });
 });
 
-// ====== 右クリックメニューから実行 ======
+// ====== メニュークリック / アイコンクリック ======
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  if (info.menuItemId === "tact-download") {
-    await handleTactDownload(tab);
-  }
+  if (info.menuItemId === "tact-download") await handleTactDownload(tab);
+  if (info.menuItemId === "tact-bulk") await handleBulkDownload(tab);
 });
 
-// ====== アイコンクリックからも同じ処理 ======
 chrome.action.onClicked.addListener(async (tab) => {
   await handleTactDownload(tab);
 });
 
-// ====== メイン処理（授業ページ or リソースページ） ======
+// ====== 単一授業ダウンロード（既存動作） ======
 async function handleTactDownload(tab) {
   const url = tab.url || "";
 
-  // 授業ページならリソースページへ移動
   const portalMatch = url.match(/https:\/\/tact\.ac\.thers\.ac\.jp\/portal\/site\/(n_\d{4}_\d{7})\/?/);
   if (portalMatch) {
     const courseId = portalMatch[1];
@@ -32,7 +34,6 @@ async function handleTactDownload(tab) {
     return;
   }
 
-  // リソースページならダウンロード開始
   const resourceMatch = url.match(/https:\/\/tact\.ac\.thers\.ac\.jp\/access\/content\/group\/(n_\d{4}_\d{7})\/?/);
   if (resourceMatch) {
     const ok = await tabConfirm(tab.id, "この授業の全ファイルを再帰的にダウンロードしますか？");
@@ -44,7 +45,62 @@ async function handleTactDownload(tab) {
   await tabAlert(tab.id, "TACTの授業ページまたはリソースページで実行してください。");
 }
 
-// ====== タブ上でUIを出す関数 ======
+// ====== 複数授業一括ダウンロード ======
+async function handleBulkDownload(tab) {
+  // タブ上で入力 or ファイル選択を促す
+  const [{ result: inputMode }] = await chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    func: () => prompt(
+      "複数授業を一括ダウンロードします。\n\n" +
+      "・授業IDをカンマ区切りで入力\n　例: n_2025_1000171,n_2024_1000030\n" +
+      "・または空欄でOKを押すと.txtファイルを選択できます。"
+    )
+  });
+
+  let ids = [];
+
+  if (inputMode && inputMode.trim().length > 0) {
+    ids = inputMode.split(",").map(s => s.trim()).filter(Boolean);
+  } else {
+    // ファイルから読み込み
+    const [{ result: fileIds }] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: async () => {
+        return new Promise((resolve) => {
+          const input = document.createElement("input");
+          input.type = "file";
+          input.accept = ".txt";
+          input.onchange = async (e) => {
+            const file = e.target.files[0];
+            const text = await file.text();
+            const ids = text.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+            resolve(ids);
+          };
+          input.click();
+        });
+      }
+    });
+    ids = fileIds || [];
+  }
+
+  if (!ids.length) {
+    await tabAlert(tab.id, "授業IDが指定されていません。");
+    return;
+  }
+
+  const confirmMsg = `${ids.length}件の授業を一括ダウンロードします。よろしいですか？`;
+  const ok = await tabConfirm(tab.id, confirmMsg);
+  if (!ok) return;
+
+  for (const id of ids) {
+    const resourceUrl = `https://tact.ac.thers.ac.jp/access/content/group/${id}/`;
+    await visitAndDownload(resourceUrl, tab.id);
+  }
+
+  await tabAlert(tab.id, "✅ 全ての授業のダウンロードが完了しました。");
+}
+
+// ====== UIヘルパー ======
 async function tabConfirm(tabId, message) {
   const [{ result }] = await chrome.scripting.executeScript({
     target: { tabId },
@@ -62,7 +118,7 @@ async function tabAlert(tabId, message) {
   });
 }
 
-// ====== ページ読み込み待ち ======
+// ====== ページ解析 & ダウンロード処理 ======
 function waitForLoad(tabId) {
   return new Promise((resolve) => {
     const listener = (id, info) => {
@@ -75,7 +131,6 @@ function waitForLoad(tabId) {
   });
 }
 
-// ====== ページ内解析 ======
 function collectLinksAndFolders() {
   const anchors = Array.from(document.querySelectorAll("a[href]"));
   const abs = anchors.map(a => new URL(a.href, location.href).href);
@@ -84,13 +139,11 @@ function collectLinksAndFolders() {
   return { folders: [...new Set(folders)], files: [...new Set(files)] };
 }
 
-// ====== 再帰ダウンロード本体 ======
 async function visitAndDownload(startUrl, uiTabId) {
   const allFiles = [];
   const visited = new Set();
   let rootFolderName = "TACT_Class";
 
-  // 授業名を取得
   const headTab = await chrome.tabs.create({ url: startUrl, active: false });
   await waitForLoad(headTab.id);
   const [{ result: className }] = await chrome.scripting.executeScript({
@@ -103,7 +156,6 @@ async function visitAndDownload(startUrl, uiTabId) {
   rootFolderName = className || "TACT_Class";
   await chrome.tabs.remove(headTab.id);
 
-  // 再帰的にフォルダ探索
   async function processFolder(url, prefix = "") {
     if (visited.has(url)) return;
     visited.add(url);

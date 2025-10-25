@@ -80,7 +80,7 @@ function collectLinksAndFolders() {
   const anchors = Array.from(document.querySelectorAll("a[href]"));
   const abs = anchors.map(a => new URL(a.href, location.href).href);
   const folders = abs.filter(href => href.endsWith("/"));
-  const files = abs.filter(href => /\.(pdf|pptx|docx|xlsx|zip|csv|txt|jpg|png)$/i.test(href));
+  const files = abs.filter(href => /\.(pdf|pptx|docx|xlsx|zip|csv|txt|jpg|png|c|cpp|py)$/i.test(href));
   return { folders: [...new Set(folders)], files: [...new Set(files)] };
 }
 
